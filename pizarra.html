@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pizarra Táctil Android</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: #fff;
+        }
+        canvas {
+            flex: 1;
+            display: block;
+            border: none;
+            background-color: white;
+            touch-action: none;
+        }
+        .botones-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 200;
+            pointer-events: none;
+        }
+        .botones-toggle {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            font-size: 22px;
+            padding: 8px 14px;
+            background: #eee;
+            border: 2px solid #aaa;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 201;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            pointer-events: auto;
+        }
+        .botones {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 8px;
+            background-color: #f0f0f0;
+            height: 52px;
+            box-sizing: border-box;
+            z-index: 100;
+            gap: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
+            transition: transform 0.3s cubic-bezier(.4,.2,.2,1), opacity 0.2s;
+            pointer-events: auto;
+        }
+        .botones.oculto {
+            transform: translateY(110%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .botones.visible {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        button {
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            background-color: white;
+            min-width: 80px;
+            flex-shrink: 0;
+        }
+
+        .dialogo, .dialogoTexto, .dialogoHerramienta {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            border: 1px solid black;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: none;
+            text-align: center;
+        }
+        .dialogo button, .dialogoTexto button, .dialogoHerramienta button {
+            margin: 5px;
+            min-width: auto;
+        }
+        #inputCargar {
+            display: none;
+        }
+        .botones::-webkit-scrollbar {
+            height: 8px;
+        }
+        .botones::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 4px;
+        }
+        .texto-moviendo {
+            outline: 2px dotted #333;
+            background: rgba(255,255,200,0.4);
+            border-radius: 5px;
+            padding: 2px 5px;
+        }
+        .herramienta-indicador {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: bold;
+            font-size: 14px;
+            color: #444;
+            background: #e7e7e7;
+            padding: 3px 12px;
+            border-radius: 6px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="lienzo"></canvas>
+    <div class="botones-container">
+        <span id="toggleBotones" class="botones-toggle">+</span>
+        <div id="botones" class="botones oculto">
+            <button onclick="borrarTodo()">Borrar Todo</button>
+            <button onclick="deshacer()">Deshacer</button>
+            <button onclick="rehacer()">Rehacer</button>
+            <button onclick="mostrarDialogoColor()">Color</button>
+            <button onclick="mostrarDialogoGrosor()">Grosor</button>
+            <button onclick="guardarImagenJPG()">Guardar JPG</button>
+            <button onclick="document.getElementById('inputCargar').click()">Cargar</button>
+            <button onclick="activarEscribirTexto()">Escribir texto</button>
+            <button onclick="mostrarDialogoTamanoTexto()">Tamaño texto</button>
+            <button onclick="mostrarDialogoHerramienta()" title="Herramienta">
+                🛠 Herramienta
+            </button>
+            <span id="herramientaIndicador" class="herramienta-indicador"></span>
+        </div>
+    </div>
+    <input type="file" id="inputCargar" accept="image/*" onchange="cargarImagen(event)">
+    <div id="dialogoColor" class="dialogo">
+        <h3>Elegir Color</h3>
+        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin: 10px 0;">
+            <button onclick="cambiarColor('negro')" style="background-color: #000; color: #fff;">Negro</button>
+            <button onclick="cambiarColor('rojo')" style="background-color: #F00; color: #fff;">Rojo</button>
+            <button onclick="cambiarColor('verde')" style="background-color: #0F0;">Verde</button>
+            <button onclick="cambiarColor('azul')" style="background-color: #00F; color: #fff;">Azul</button>
+            <button onclick="cambiarColor('amarillo')" style="background-color: #FF0;">Amarillo</button>
+            <button onclick="cambiarColor('blanco')" style="background-color: #FFF;">Blanco</button>
+        </div>
+        <button onclick="document.getElementById('dialogoColor').style.display='none'">Cancelar</button>
+    </div>
+    <div id="dialogoGrosor" class="dialogo">
+        <h3>Elegir Grosor</h3>
+        <div style="margin: 15px 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <button onclick="cambiarGrosor(-5)">-</button>
+            <span>Grosor: <span id="grosorActual">10</span>px</span>
+            <button onclick="cambiarGrosor(5)">+</button>
+        </div>
+        <div style="display: flex; justify-content: center; gap: 10px;">
+            <button onclick="aceptarGrosor()">Aceptar</button>
+            <button onclick="document.getElementById('dialogoGrosor').style.display='none'">Cancelar</button>
+        </div>
+    </div>
+    <div id="dialogoTamanoTexto" class="dialogoTexto">
+        <h3>Tamaño de texto</h3>
+        <input type="number" id="inputTamanoTexto" min="8" max="100" value="24" style="width:70px;">
+        <div style="margin-top:10px;">
+            <button onclick="aceptarTamanoTexto()">Aceptar</button>
+            <button onclick="document.getElementById('dialogoTamanoTexto').style.display='none'">Cancelar</button>
+        </div>
+    </div>
+    <div id="dialogoHerramienta" class="dialogoHerramienta">
+        <h3>Elige herramienta</h3>
+        <div style="display:flex; flex-direction:column; gap:8px; align-items:center; margin-bottom:10px;">
+            <button onclick="seleccionarHerramienta('mano')">✍ Mano alzada</button>
+            <button onclick="seleccionarHerramienta('linea')">➖ Línea</button>
+            <button onclick="seleccionarHerramienta('circulo')">⭕ Círculo</button>
+        </div>
+        <button onclick="document.getElementById('dialogoHerramienta').style.display='none'">Cancelar</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('lienzo');
+        const ctx = canvas.getContext('2d');
+        let color = "negro";
+        let lineWidth = 10;
+        let grosorTemporal = lineWidth;
+        let trazos = [];
+        let rehacerTrazos = [];
+        let trazoActual = [];
+        let dibujando = false;
+
+        // Herramienta
+        let herramienta = "mano"; // 'mano', 'linea', 'circulo'
+        let herramientaEstado = null; // Para círculo: {centro: {x,y}}; para línea: {p1, p2}
+
+        // Escribir texto
+        let modoEscribirTexto = false;
+        let tamanoTexto = 24;
+        let textoMoviendo = null; // índice del texto que se está moviendo, o null
+        let offsetMovX = 0, offsetMovY = 0;
+
+        // Menú botones
+        const toggleBotones = document.getElementById('toggleBotones');
+        const botones = document.getElementById('botones');
+        let botonesVisibles = false;
+
+        // Herramienta indicador
+        const herramientaIndicador = document.getElementById('herramientaIndicador');
+
+        // Colores disponibles
+        const colores = {
+            "negro": "#000000",
+            "rojo": "#FF0000",
+            "verde": "#00FF00",
+            "azul": "#0000FF",
+            "amarillo": "#FFFF00",
+            "blanco": "#FFFFFF"
+        };
+
+        // --- Herramienta ---
+        function mostrarDialogoHerramienta() {
+            document.getElementById('dialogoHerramienta').style.display = 'block';
+        }
+        function seleccionarHerramienta(tipo) {
+            herramienta = tipo;
+            document.getElementById('dialogoHerramienta').style.display = 'none';
+            actualizarHerramientaIndicador();
+            // reset estados
+            herramientaEstado = null;
+        }
+        function actualizarHerramientaIndicador() {
+            const nombres = {
+                mano: '✍ Mano',
+                linea: '➖ Línea',
+                circulo: '⭕ Círculo'
+            };
+            herramientaIndicador.textContent = nombres[herramienta] || herramienta;
+        }
+        seleccionarHerramienta('mano'); // Inicial
+
+        // --- Menú de botones desplegable ---
+        function actualizarBotonesMenu() {
+            if (botonesVisibles) {
+                botones.classList.remove('oculto');
+                botones.classList.add('visible');
+                toggleBotones.textContent = '-';
+            } else {
+                botones.classList.remove('visible');
+                botones.classList.add('oculto');
+                toggleBotones.textContent = '+';
+            }
+        }
+        toggleBotones.addEventListener('click', function() {
+            botonesVisibles = !botonesVisibles;
+            actualizarBotonesMenu();
+        });
+        // Ocultar por defecto
+        botonesVisibles = false;
+        actualizarBotonesMenu();
+
+        // --- Canvas resize ---
+        function resizeCanvas() {
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 54; // Altura menú + margen
+            ctx.putImageData(img, 0, 0);
+            redibujar();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function actualizarEstilo() {
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.lineWidth = lineWidth;
+            ctx.strokeStyle = colores[color] || "#000000";
+        }
+
+        function obtenerCoordenadasTouch(e) {
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+            return { x, y };
+        }
+
+        // --- Dibujo General según herramienta ---
+        function iniciarDibujo(e) {
+            if (modoEscribirTexto || textoMoviendo !== null) return;
+            if (e.touches.length !== 1) return;
+
+            const {x, y} = obtenerCoordenadasTouch(e);
+
+            if (herramienta === 'mano') {
+                dibujando = true;
+                trazoActual = [{x, y}];
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                rehacerTrazos = [];
+            }
+            else if (herramienta === 'linea') {
+                if (!herramientaEstado || herramientaEstado.p1 == null || herramientaEstado.p2 != null) {
+                    herramientaEstado = {p1: {x, y}, p2: null};
+                }
+            }
+            // NO poner nada aquí para círculo
+            e.preventDefault();
+        }
+
+        function dibujar(e) {
+            if (modoEscribirTexto || textoMoviendo !== null) return;
+            if (herramienta === 'mano') {
+                if (!dibujando) return;
+                const {x, y} = obtenerCoordenadasTouch(e);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+                trazoActual.push({x, y});
+            }
+            e.preventDefault();
+        }
+
+        function detenerDibujo(e) {
+            if (modoEscribirTexto || textoMoviendo !== null) return;
+            if (herramienta === 'mano') {
+                if (dibujando && trazoActual.length) {
+                    trazos.push({
+                        puntos: trazoActual.slice(),
+                        color,
+                        lineWidth
+                    });
+                    trazoActual = [];
+                }
+                dibujando = false;
+                actualizarEstilo();
+            }
+            e && e.preventDefault();
+        }
+
+        // Para línea y círculo: usar touchstart dos veces
+        canvas.addEventListener("touchstart", function(e) {
+            if (modoEscribirTexto || textoMoviendo !== null) return;
+            if (e.touches.length !== 1) return;
+            const {x, y} = obtenerCoordenadasTouch(e);
+
+            // Línea continua
+            if (herramienta === 'linea') {
+                if (!herramientaEstado || !herramientaEstado.p1 || herramientaEstado.p2) {
+                    herramientaEstado = {p1: {x, y}, p2: null};
+                } else if (!herramientaEstado.p2) {
+                    herramientaEstado.p2 = {x, y};
+                    trazos.push({
+                        tipo: 'linea',
+                        p1: herramientaEstado.p1,
+                        p2: herramientaEstado.p2,
+                        color,
+                        lineWidth
+                    });
+                    herramientaEstado = null;
+                    redibujar();
+                }
+                e.preventDefault();
+                return;
+            }
+
+            // Círculo: primer toque centro, segundo radio SIEMPRE
+            if (herramienta === 'circulo') {
+                // Primer toque: guardar centro si no hay estado
+                if (!herramientaEstado || !herramientaEstado.centro) {
+                    herramientaEstado = {centro: {x, y}};
+                }
+                // Segundo toque: guardar radio y dibujar círculo
+                else if (herramientaEstado.centro && !herramientaEstado.radioPunto) {
+                    herramientaEstado.radioPunto = {x, y};
+                    trazos.push({
+                        tipo: 'circulo',
+                        centro: herramientaEstado.centro,
+                        radioPunto: herramientaEstado.radioPunto,
+                        color,
+                        lineWidth
+                    });
+                    herramientaEstado = null; // Reiniciar SIEMPRE para permitir crear otro círculo
+                    redibujar();
+                }
+                e.preventDefault();
+                return;
+            }
+        }, {passive: false});
+
+        function borrarTodo() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            trazos = [];
+            rehacerTrazos = [];
+            trazoActual = [];
+            textoMoviendo = null;
+            herramientaEstado = null;
+        }
+
+        function deshacer() {
+            if (trazos.length) {
+                const trazoQuitado = trazos.pop();
+                rehacerTrazos.push(trazoQuitado);
+                redibujar();
+            }
+        }
+
+        function rehacer() {
+            if (rehacerTrazos.length) {
+                const trazoRecuperado = rehacerTrazos.pop();
+                trazos.push(trazoRecuperado);
+                redibujar();
+            }
+        }
+
+        function redibujar() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            trazos.forEach((trazo, idx) => {
+                if (trazo.texto) {
+                    ctx.save();
+                    ctx.font = `${trazo.fontSize || 24}px Arial`;
+                    ctx.fillStyle = colores[trazo.color] || "#000000";
+                    ctx.textBaseline = "top";
+                    ctx.fillText(trazo.texto, trazo.x, trazo.y);
+
+                    // Si está moviéndose mostrar borde visual
+                    if (textoMoviendo === idx) {
+                        const w = ctx.measureText(trazo.texto).width;
+                        const h = (trazo.fontSize || 24) * 1.2;
+                        ctx.strokeStyle = "#333";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(trazo.x - 2, trazo.y - 2, w + 8, h + 4);
+                    }
+                    ctx.restore();
+                } else if (trazo.tipo === 'linea') {
+                    ctx.save();
+                    ctx.strokeStyle = colores[trazo.color] || "#000000";
+                    ctx.lineWidth = trazo.lineWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(trazo.p1.x, trazo.p1.y);
+                    ctx.lineTo(trazo.p2.x, trazo.p2.y);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (trazo.tipo === 'circulo') {
+                    ctx.save();
+                    ctx.strokeStyle = colores[trazo.color] || "#000000";
+                    ctx.lineWidth = trazo.lineWidth;
+                    let dx = trazo.radioPunto.x - trazo.centro.x;
+                    let dy = trazo.radioPunto.y - trazo.centro.y;
+                    let radio = Math.sqrt(dx*dx + dy*dy);
+                    ctx.beginPath();
+                    ctx.arc(trazo.centro.x, trazo.centro.y, radio, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    // Mano alzada
+                    ctx.strokeStyle = colores[trazo.color] || "#000000";
+                    ctx.lineWidth = trazo.lineWidth;
+                    ctx.beginPath();
+                    trazo.puntos.forEach((p, i) => {
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    });
+                    ctx.stroke();
+                }
+            });
+
+            actualizarEstilo();
+        }
+
+        function mostrarDialogoColor() {
+            document.getElementById('dialogoColor').style.display = 'block';
+        }
+
+        function cambiarColor(nuevoColor) {
+            color = nuevoColor;
+            actualizarEstilo();
+            document.getElementById('dialogoColor').style.display = 'none';
+        }
+
+        function mostrarDialogoGrosor() {
+            grosorTemporal = lineWidth;
+            document.getElementById('grosorActual').textContent = grosorTemporal;
+            document.getElementById('dialogoGrosor').style.display = 'block';
+        }
+
+        function cambiarGrosor(delta) {
+            grosorTemporal = Math.max(1, Math.min(50, grosorTemporal + delta));
+            document.getElementById('grosorActual').textContent = grosorTemporal;
+        }
+
+        function aceptarGrosor() {
+            lineWidth = grosorTemporal;
+            actualizarEstilo();
+            document.getElementById('dialogoGrosor').style.display = 'none';
+        }
+
+        function mostrarDialogoTamanoTexto() {
+            document.getElementById("inputTamanoTexto").value = tamanoTexto;
+            document.getElementById('dialogoTamanoTexto').style.display = "block";
+        }
+        function aceptarTamanoTexto() {
+            tamanoTexto = Math.max(8, Math.min(100, parseInt(document.getElementById("inputTamanoTexto").value) || 24));
+            document.getElementById('dialogoTamanoTexto').style.display = "none";
+        }
+
+        function guardarImagenJPG() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.fillStyle = "#FFFFFF";
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+            // Redibujar los trazos en tempCanvas
+            trazos.forEach(trazo => {
+                if (trazo.texto) {
+                    tempCtx.save();
+                    tempCtx.font = `${trazo.fontSize || 24}px Arial`;
+                    tempCtx.fillStyle = colores[trazo.color] || "#000000";
+                    tempCtx.textBaseline = "top";
+                    tempCtx.fillText(trazo.texto, trazo.x, trazo.y);
+                    tempCtx.restore();
+                } else if (trazo.tipo === 'linea') {
+                    tempCtx.save();
+                    tempCtx.strokeStyle = colores[trazo.color] || "#000000";
+                    tempCtx.lineWidth = trazo.lineWidth;
+                    tempCtx.beginPath();
+                    tempCtx.moveTo(trazo.p1.x, trazo.p1.y);
+                    tempCtx.lineTo(trazo.p2.x, trazo.p2.y);
+                    tempCtx.stroke();
+                    tempCtx.restore();
+                } else if (trazo.tipo === 'circulo') {
+                    tempCtx.save();
+                    tempCtx.strokeStyle = colores[trazo.color] || "#000000";
+                    tempCtx.lineWidth = trazo.lineWidth;
+                    let dx = trazo.radioPunto.x - trazo.centro.x;
+                    let dy = trazo.radioPunto.y - trazo.centro.y;
+                    let radio = Math.sqrt(dx*dx + dy*dy);
+                    tempCtx.beginPath();
+                    tempCtx.arc(trazo.centro.x, trazo.centro.y, radio, 0, 2 * Math.PI);
+                    tempCtx.stroke();
+                    tempCtx.restore();
+                } else {
+                    tempCtx.strokeStyle = colores[trazo.color] || "#000000";
+                    tempCtx.lineWidth = trazo.lineWidth;
+                    tempCtx.beginPath();
+                    trazo.puntos.forEach((p, i) => {
+                        if (i === 0) tempCtx.moveTo(p.x, p.y);
+                        else tempCtx.lineTo(p.x, p.y);
+                    });
+                    tempCtx.stroke();
+                }
+            });
+
+            const enlace = document.createElement('a');
+            enlace.download = 'dibujo.jpg';
+            enlace.href = tempCanvas.toDataURL('image/jpeg', 0.95);
+            document.body.appendChild(enlace);
+            enlace.click();
+            document.body.removeChild(enlace);
+        }
+
+        function cargarImagen(event) {
+            const archivo = event.target.files[0];
+            if (archivo) {
+                const lector = new FileReader();
+                lector.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        trazos = [];
+                        rehacerTrazos = [];
+                        trazoActual = [];
+                        textoMoviendo = null;
+                        herramientaEstado = null;
+                    };
+                    img.src = e.target.result;
+                };
+                lector.readAsDataURL(archivo);
+            }
+        }
+
+        // --- ESCRIBIR TEXTO ---
+        function activarEscribirTexto() {
+            modoEscribirTexto = true;
+            alert("Toca la pantalla donde quieras escribir el texto.");
+        }
+
+        canvas.addEventListener("touchstart", function(e) {
+            if (!modoEscribirTexto) return;
+            const {x, y} = obtenerCoordenadasTouch(e);
+            let texto = prompt("Introduce el texto a escribir:");
+            if (texto && texto.trim() !== "") {
+                trazos.push({
+                    texto,
+                    x,
+                    y,
+                    color,
+                    fontSize: tamanoTexto
+                });
+                redibujar();
+            }
+            modoEscribirTexto = false;
+            e.preventDefault();
+        }, {passive: false});
+
+        // --- MOVER TEXTO ---
+        function buscarTextoEnPos(x, y) {
+            // Devuelve el índice del texto en la posición (x, y) o -1
+            for (let i = trazos.length - 1; i >= 0; i--) {
+                const trazo = trazos[i];
+                if (trazo.texto) {
+                    ctx.save();
+                    ctx.font = `${trazo.fontSize || 24}px Arial`;
+                    ctx.textBaseline = "top";
+                    const w = ctx.measureText(trazo.texto).width;
+                    const h = (trazo.fontSize || 24) * 1.2;
+                    ctx.restore();
+                    if (x >= trazo.x && x <= trazo.x + w + 10 && y >= trazo.y && y <= trazo.y + h + 6) {
+                        return i;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        canvas.addEventListener("touchstart", function(e) {
+            if (modoEscribirTexto) return;
+            if (e.touches.length !== 1) return;
+            const {x, y} = obtenerCoordenadasTouch(e);
+            const idx = buscarTextoEnPos(x, y);
+            if (idx !== -1) {
+                textoMoviendo = idx;
+                offsetMovX = x - trazos[idx].x;
+                offsetMovY = y - trazos[idx].y;
+                redibujar();
+                e.preventDefault();
+            }
+        }, {passive: false});
+
+        canvas.addEventListener("touchmove", function(e) {
+            if (textoMoviendo !== null) {
+                const {x, y} = obtenerCoordenadasTouch(e);
+                const trazo = trazos[textoMoviendo];
+                trazo.x = x - offsetMovX;
+                trazo.y = y - offsetMovY;
+                redibujar();
+                e.preventDefault();
+            }
+        }, {passive: false});
+
+        canvas.addEventListener("touchend", function(e) {
+            if (textoMoviendo !== null) {
+                textoMoviendo = null;
+                redibujar();
+                e.preventDefault();
+            }
+        }, {passive: false});
+
+        // --- Eventos táctiles para dibujar ---
+        canvas.addEventListener("touchstart", iniciarDibujo, {passive: false});
+        canvas.addEventListener("touchmove", dibujar, {passive: false});
+        canvas.addEventListener("touchend", detenerDibujo, {passive: false});
+        canvas.addEventListener("touchcancel", detenerDibujo, {passive: false});
+
+        // Evita el scroll accidental
+        document.body.addEventListener('touchmove', function(e){
+            if (dibujando || textoMoviendo !== null) e.preventDefault();
+        }, {passive: false});
+
+        // Inicializar estilos e indicador herramienta
+        actualizarEstilo();
+        actualizarHerramientaIndicador();
+    </script>
+</body>
+</html>
